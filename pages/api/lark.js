@@ -8,30 +8,32 @@ const configuration = new Configuration({
 const openai = new OpenAIApi(configuration);
 
 module.exports = async function handler(req, res) {
-  const body = req.body;
+  res.setHeader("Content-Type", "application/json");
 
-  // Xác minh webhook từ Lark (challenge step)
-  if (body.type === "url_verification") {
-    return res.status(200).json({ challenge: body.challenge });
-  }
+  try {
+    const body = req.body;
 
-  // Kiểm tra token xác thực webhook
-  if (body.token !== process.env.LARK_VERIFICATION_TOKEN) {
-    return res.status(401).json({ error: "Invalid verification token" });
-  }
+    // Xác minh webhook từ Lark (challenge step)
+    if (body.type === "url_verification") {
+      return res.status(200).json({ challenge: body.challenge });
+    }
 
-  // Xử lý event từ Lark
-  if (body.type === "event_callback") {
-    const event = body.event;
+    // Kiểm tra token xác thực webhook
+    if (body.token !== process.env.LARK_VERIFICATION_TOKEN) {
+      return res.status(401).json({ error: "Invalid verification token" });
+    }
 
-    if (
-      event &&
-      event.type === "message" &&
-      event.message.message_type === "text"
-    ) {
-      const userText = event.message.text;
+    // Xử lý event từ Lark
+    if (body.type === "event_callback") {
+      const event = body.event;
 
-      try {
+      if (
+        event &&
+        event.type === "message" &&
+        event.message.message_type === "text"
+      ) {
+        const userText = event.message.text;
+
         // Gọi OpenAI ChatGPT
         const completion = await openai.createChatCompletion({
           model: "gpt-4o",
@@ -58,7 +60,7 @@ module.exports = async function handler(req, res) {
         await axios.post(
           "https://open.larksuite.com/open-apis/message/v4/send/",
           {
-            receive_id_type: "open_id", // hoặc "chat_id" nếu dùng open_chat_id
+            receive_id_type: "open_id",
             receive_id: event.sender.sender_id.open_id,
             msg_type: "text",
             content: JSON.stringify({ text: replyText }),
@@ -72,13 +74,16 @@ module.exports = async function handler(req, res) {
         );
 
         return res.status(200).json({ msg: "ok" });
-      } catch (error) {
-        console.error("Lỗi xử lý ChatGPT hoặc gửi tin nhắn:", error.response?.data || error.message);
-        return res.status(500).json({ error: "Internal server error" });
       }
     }
-  }
 
-  // Mặc định: bỏ qua các loại event khác
-  return res.status(200).json({ msg: "ignored" });
+    // Mặc định: bỏ qua các loại event khác
+    return res.status(200).json({ msg: "ignored" });
+  } catch (error) {
+    console.error(
+      "Lỗi xử lý webhook Lark:",
+      error.response?.data || error.message || error
+    );
+    return res.status(500).json({ error: "Internal server error" });
+  }
 };
