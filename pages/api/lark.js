@@ -13,70 +13,62 @@ module.exports = async function handler(req, res) {
   try {
     const body = req.body;
 
-    // Xác minh webhook từ Lark (challenge step)
+    // 1. Xác minh webhook từ Lark
     if (body.type === "url_verification") {
       return res.status(200).json({ challenge: body.challenge });
     }
 
-    // Kiểm tra token xác thực webhook chỉ với các event callback
-    if (body.type === "event_callback") {
-      if (body.token !== process.env.LARK_VERIFICATION_TOKEN) {
-        return res.status(401).json({ error: "Invalid verification token" });
-      }
+    // 2. Xử lý tin nhắn văn bản
+    if (
+      body.type === "event_callback" &&
+      body.event?.type === "message" &&
+      body.event.message?.message_type === "text"
+    ) {
+      const userText = body.event.message.text;
 
-      const event = body.event;
+      // Gọi OpenAI
+      const completion = await openai.createChatCompletion({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "Bạn là một trợ lý ảo thông minh." },
+          { role: "user", content: userText },
+        ],
+      });
 
-      if (
-        event &&
-        event.type === "message" &&
-        event.message.message_type === "text"
-      ) {
-        const userText = event.message.text;
+      const replyText = completion.data.choices[0].message.content;
 
-        // Gọi OpenAI ChatGPT
-        const completion = await openai.createChatCompletion({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: "Bạn là một trợ lý ảo thông minh." },
-            { role: "user", content: userText },
-          ],
-        });
+      // Lấy token từ Lark
+      const tokenRes = await axios.post(
+        "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal/",
+        {
+          app_id: process.env.LARK_APP_ID,
+          app_secret: process.env.LARK_APP_SECRET,
+        }
+      );
 
-        const replyText = completion.data.choices[0].message.content;
+      const tenant_access_token = tokenRes.data.tenant_access_token;
 
-        // Lấy tenant_access_token từ Lark
-        const tokenRes = await axios.post(
-          "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal/",
-          {
-            app_id: process.env.LARK_APP_ID,
-            app_secret: process.env.LARK_APP_SECRET,
-          }
-        );
-
-        const tenant_access_token = tokenRes.data.tenant_access_token;
-
-        // Gửi tin nhắn trả lời lại Lark
-        await axios.post(
-          "https://open.larksuite.com/open-apis/message/v4/send/",
-          {
-            receive_id_type: "open_id",
-            receive_id: event.sender.sender_id.open_id,
-            msg_type: "text",
-            content: JSON.stringify({ text: replyText }),
+      // Gửi lại phản hồi
+      await axios.post(
+        "https://open.larksuite.com/open-apis/message/v4/send/",
+        {
+          receive_id_type: "open_id",
+          receive_id: body.event.sender.sender_id.open_id,
+          msg_type: "text",
+          content: JSON.stringify({ text: replyText }),
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${tenant_access_token}`,
+            "Content-Type": "application/json",
           },
-          {
-            headers: {
-              Authorization: `Bearer ${tenant_access_token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        }
+      );
 
-        return res.status(200).json({ msg: "ok" });
-      }
+      return res.status(200).json({ msg: "ok" });
     }
 
-    // Mặc định: bỏ qua các loại event khác hoặc trường hợp không có token
+    // 3. Các trường hợp khác
     return res.status(200).json({ msg: "ignored" });
   } catch (error) {
     console.error(
