@@ -18,13 +18,12 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ challenge: body.challenge });
     }
 
-    // Kiểm tra token xác thực webhook
-    if (body.token !== process.env.LARK_VERIFICATION_TOKEN) {
-      return res.status(401).json({ error: "Invalid verification token" });
-    }
-
-    // Xử lý event từ Lark
+    // Kiểm tra token xác thực webhook chỉ với các event callback
     if (body.type === "event_callback") {
+      if (body.token !== process.env.LARK_VERIFICATION_TOKEN) {
+        return res.status(401).json({ error: "Invalid verification token" });
+      }
+
       const event = body.event;
 
       if (
@@ -77,7 +76,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // Mặc định: bỏ qua các loại event khác
+    // Mặc định: bỏ qua các loại event khác hoặc trường hợp không có token
     return res.status(200).json({ msg: "ignored" });
   } catch (error) {
     console.error(
