@@ -1,0 +1,15 @@
+{
+  "name": "lark-chatgpt-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "13.x",
+    "openai": "^4.0.0",
+    "axios": "^1.4.0"
+  }
+}
